@@ -1,12 +1,7 @@
-"""
-Most of the code in this module is based on the code from the PythonCode repository by ddland. Most modifications made
-have to do with documentation and student friendly functions like get_value() and get_complete_state().
-"""
-
-
 import serial
 import time
 from .exceptions import ConnectionError, TimeoutError
+from threading import Thread, Lock
 
 
 class TTI1604:
@@ -16,17 +11,24 @@ class TTI1604:
     initial release of the script. Working, but not documented / optimised yet.
 
     Connect the device and set the serial port. After that use the commands:
-    * send_command(ser, command, debug=False)
-      send a binary string (b'a' for example) to the device. Commands are
-      the key-presses as if pressed on the device.
-    * char = read_data(ser)
-      reads the data from the serial bus and stores the (10 characters) in char.
-    * parse_number_unit(char)
-      parse the readout and returns the number from the display. If resistance is
-      measured the kOhm or Ohm settings are taking into account.
-    * parse_data(char)
-      parse all the data in the 10-char string from the device.
-      All settings are retreived.
+
+    .. code-block:: python
+
+        # Send a binary string (b'a' for example) to the device. 
+        # Commands are the key-presses as if pressed on the device.
+        instance.send_command(ser, command, debug=False)
+        
+        # Reads the data from the serial bus and stores the (10 characters) in char.
+        char = instance.read_data(ser)
+
+        # Parse the readout and returns the number from the display. If resistance is
+        # measured the kOhm or Ohm settings are taking into account.
+        char = instance.parse_number_unit(char)
+        
+        # Parse all the data in the 10-char string from the device.
+        # All settings are retreived.
+        char = instance.parse_data(char)
+        
 
     Available keys:
     * Keys
@@ -61,6 +63,7 @@ class TTI1604:
         self._verbose = verbose
         self._serial_port = serial_port
         self._baudrate = baudrate
+        self._lock = Lock()
 
         # Initialize serial connection
         if connect_on_init:
@@ -143,13 +146,16 @@ class TTI1604:
         #     )
 
     # COMMUNICATION METHODS
-    def send_command(self, command: str) -> bool:
+    def send_command(self, command: str, timeout:int=5) -> bool:
         """Send a command to the TTI1604.
 
         Parameters
         ----------
         command : str
             The command to send to the TTI1604.
+        timeout : int, optional
+            The time in seconds to wait for the threading lock
+            to be acquired. The default is 5s.
 
         Returns
         -------
@@ -157,6 +163,8 @@ class TTI1604:
             True if the command was executed, False otherwise.
         """
         # cleanup state
+        if not self._lock.acquire(timeout=timeout):
+            raise TimeoutError("Could not acquire lock within {}s.".format(timeout))
         self._ser.reset_input_buffer()
         self._ser.reset_output_buffer()
 
@@ -179,10 +187,17 @@ class TTI1604:
                 print("Command ok")
             else:
                 print("Command not ok: ", command, " ", ret)
+        self._lock.release()
         return retval
 
-    def read_data(self) -> bytes:
+    def read_data(self, timeout:float = 5) -> bytes:
         """Read data from the TTI1604.
+
+        Parameters
+        ----------
+        timeout : float, optional
+            The time in seconds to wait for the threading lock
+            to be acquired. The default is 5s.
 
         Returns
         -------
@@ -191,9 +206,13 @@ class TTI1604:
         """
         if not self.is_connected:
             raise ConnectionError("Not connected to TTI1604, call connect() first.")
+        if not self._lock.acquire(timeout=timeout):
+            raise TimeoutError("Could not acquire lock within {}s.".format(timeout))
         self._ser.reset_input_buffer()
         self._ser.reset_output_buffer()
-        return self._ser.read(10)
+        value = self._ser.read(10)
+        self._lock.release()
+        return value
 
     def parse_number(self, char: str) -> float:
         """Parse the number from the readout.
