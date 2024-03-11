@@ -1,0 +1,6 @@
+pyserial
+pyvisa
+numpy
+PyVISA-py
+psutil
+zeroconf
