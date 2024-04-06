@@ -1,5 +1,9 @@
 
 
+class MachineTypeError(Exception):
+    """Raised when a machine type is not supported."""
+    pass
+
 class ConnectionError(Exception):
     """Raised when a connection to a device cannot be established."""
     pass
